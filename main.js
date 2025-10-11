@@ -10,6 +10,12 @@ require('console-stamp')(console, {
   format: ':date(yyyy/mm/dd HH:MM:ss.l)',
 })
 
+// --------------------- Type definition ---------------------------
+
+/** @typedef {import('puppeteer-core').Browser} Browser */
+
+// ---------------------------------------------------------------------
+
 // --- suppress harmless first-run extension error, but still restart ---
 const EXT_ID = 'jjndjgheafjngoipoacpjgeicjeomjli';
 
@@ -104,6 +110,8 @@ console.log(`Audio Bitrate: ${argv.audioBitrate} bps (${argv.audioBitrate / 1000
 console.log(`Minimum Frame Rate: ${argv.frameRate} fps`)
 console.log(`Port: ${argv.port}`)
 console.log(`Resolution: ${argv.width}x${argv.height}`)
+console.log(`NBC Timer Enabled: ${argv.enableNBCPauseTimer}`)
+console.log(`NBC Timer: ${argv.nbcPauseTimer}`)
 
 const encodingParams = {
   videoBitsPerSecond: argv.videoBitrate,
@@ -123,6 +131,10 @@ function delay(ms) {
 }
 
 var currentBrowser, dataDir, lastPage
+/**
+ * Gets the current Puppeteer browser instance.
+ * @returns {Promise<Browser>} The current Puppeteer browser.
+ */
 const getCurrentBrowser = async () => {
   if (!currentBrowser || !currentBrowser.isConnected()) {
     currentBrowser = await launch(
@@ -362,6 +374,8 @@ async function main() {
   })
 
   async function handleStreamRequest(req, res, u) {
+
+    /** @param {Browser} browser */
     async function setupPage(browser) {
       // Create a new page
       var newPage = await browser.newPage()
@@ -463,13 +477,13 @@ async function main() {
       await page.goto(u)
 
       //  get some additional info about the page
-      const uiSize = await page.evaluate(`(function() {
+      const uiSize = await page.evaluate(() => {
         return {
           height: window.outerHeight - window.innerHeight,
           width: window.outerWidth - window.innerWidth,
         }
-      })()`)
-      const session = await page.target().createCDPSession()
+      })
+      const session = await page.createCDPSession()
       const {windowId} = await session.send('Browser.getWindowForTarget')
 
       await session.send('Browser.setWindowBounds', {
