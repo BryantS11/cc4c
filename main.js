@@ -584,9 +584,34 @@ async function main() {
             const intervalSeconds = argv.nbcPauseTimer
             setInterval(() => {
               const getVideo = document.querySelector('video')
+
+              async function startNBCStreamAsync() {
+                let video = document.querySelector('video')
+                video.style.setProperty('position', 'fixed', 'important')
+                video.style.top = '0'
+                video.style.left = '0'
+                video.style.width = '100%'
+                video.style.height = '100%'
+                video.style.zIndex = '999000'
+                video.style.background = 'black'
+                video.style.cursor = 'none'
+                video.style.transform = 'translate(0, 0)'
+                video.style.objectFit = 'contain'
+                video.play()
+                video.muted = false
+                video.removeAttribute('muted')
+
+                let header = document.querySelector('.header-container')
+                if (header) {
+                  header.style.zIndex = '0'
+                }
+              }
+
               if (getVideo.paused) {
                 console.log('Video paused — attempting to resume...')
-                startNBCStream()
+                startNBCStreamAsync().catch( () => {
+                  window.location.reload()
+                })
               } else {
                 console.log("Video is not Paused");  
               }
