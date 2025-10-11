@@ -539,9 +539,10 @@ async function main() {
           if (${argv.enableNBCPauseTimer}) {
             const intervalSeconds = ${argv.nbcPauseTimer};
             setInterval(() => {
-              if (video.paused) {
+              const getVideo = document.querySelector('video')
+              if (getVideo.paused) {
                 console.log('Video paused — attempting to resume...')
-                video.play().catch(err => console.warn('Failed to resume video', err))
+                getVideo.play().catch(err => console.warn('Failed to resume video', err))
               } else {
                 console.log("Video is not Paused");  
               }
