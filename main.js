@@ -72,6 +72,18 @@ const argv = require('yargs')
     type: 'boolean',
     default: false,
   })
+  .option('enableNBCPauseTimer', {
+    alias: 'nbcp',
+    description: 'Allow timer on NBC to check if paused',
+    type: 'boolean',
+    default: false,
+  })
+  .option('nbcPauseTimer', {
+    alias: 'nbct',
+    description: 'Check every x amount of seconds to see if nbc is paused',
+    type: 'number',
+    default: 10,
+  })
   .scriptName('cc4c')
   .usage('Usage: $0 [options]')
   .example('$0 -v 6000000 -a 192000 -f 30 -w 1920 -h 1080', 'Capture at 6Mbps video, 192kbps audio, 30fps, 1920x1080')
@@ -82,7 +94,8 @@ const argv = require('yargs')
   .wrap(null) // Don't wrap help text
   .help()
   .alias('help', '?')
-  .version(false).argv // Disable version number in help
+  .version(false) // Disable version number in help
+  .parseSync() // Parse to JS, non Async // Give Types
 
 // Display settings
 console.log('Selected settings:')
@@ -396,13 +409,13 @@ async function main() {
         audioBitsPerSecond: encodingParams.audioBitsPerSecond,
         mimeType: encodingParams.mimeType,
         videoConstraints: {
-          mandatory: {
-            minWidth: viewport.width,
-            minHeight: viewport.height,
-            maxWidth: viewport.width,
-            maxHeight: viewport.height,
-            minFrameRate: encodingParams.minFrameRate,
-            maxFrameRate: encodingParams.maxFrameRate,
+          mandatory: { // Fix: Type MediaTrackConstraints 
+            height: viewport.height, 
+            width: viewport.width,
+            frameRate: {
+              min: encodingParams.minFrameRate,
+              max: encodingParams.maxFrameRate
+            },
           },
         },
       })
@@ -506,6 +519,19 @@ async function main() {
           let header = document.querySelector('.header-container')
           if (header) {
             header.style.zIndex = '0'
+          }
+
+          // Check every X seconds if the video is paused
+          if (${argv.enableNBCPauseTimer}) {
+            const intervalSeconds = ${argv.nbcPauseTimer};
+            setInterval(() => {
+              if (video.paused) {
+                console.log('Video paused — attempting to resume...')
+                video.play().catch(err => console.warn('Failed to resume video', err))
+              } else {
+                console.log("Video is not Paused");  
+              }
+            }, intervalSeconds * 1000);
           }
         })()`)
       } catch (e) {
