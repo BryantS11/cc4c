@@ -73,13 +73,13 @@ const argv = require('yargs')
     default: false,
   })
   .option('enableNBCPauseTimer', {
-    alias: 'nbcp',
+    alias: 'e',
     description: 'Allow timer on NBC to check if paused',
     type: 'boolean',
     default: false,
   })
   .option('nbcPauseTimer', {
-    alias: 'nbct',
+    alias: 't',
     description: 'Check every x amount of seconds to see if nbc is paused',
     type: 'number',
     default: 10,
