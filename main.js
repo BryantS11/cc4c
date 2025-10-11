@@ -510,45 +510,90 @@ async function main() {
       console.log('URL contains www.nbc.com')
       try {
         await page.waitForSelector('video')
+
         await page.waitForFunction(`(function() {
           let video = document.querySelector('video')
           return video.readyState === 4
         })()`)
-        await page.evaluate(`(function() {
-          let video = document.querySelector('video')
-          video.style.setProperty('position', 'fixed', 'important')
-          video.style.top = '0'
-          video.style.left = '0'
-          video.style.width = '100%'
-          video.style.height = '100%'
-          video.style.zIndex = '999000'
-          video.style.background = 'black'
-          video.style.cursor = 'none'
-          video.style.transform = 'translate(0, 0)'
-          video.style.objectFit = 'contain'
-          video.play()
-          video.muted = false
-          video.removeAttribute('muted')
 
-          let header = document.querySelector('.header-container')
-          if (header) {
-            header.style.zIndex = '0'
+        // await page.evaluate(`(function() {
+        //   let video = document.querySelector('video')
+        //   video.style.setProperty('position', 'fixed', 'important')
+        //   video.style.top = '0'
+        //   video.style.left = '0'
+        //   video.style.width = '100%'
+        //   video.style.height = '100%'
+        //   video.style.zIndex = '999000'
+        //   video.style.background = 'black'
+        //   video.style.cursor = 'none'
+        //   video.style.transform = 'translate(0, 0)'
+        //   video.style.objectFit = 'contain'
+        //   video.play()
+        //   video.muted = false
+        //   video.removeAttribute('muted')
+
+        //   let header = document.querySelector('.header-container')
+        //   if (header) {
+        //     header.style.zIndex = '0'
+        //   }
+
+        //   // Check every X seconds if the video is paused
+        //   if (${argv.enableNBCPauseTimer}) {
+        //     const intervalSeconds = ${argv.nbcPauseTimer};
+        //     setInterval(() => {
+        //       const getVideo = document.querySelector('video')
+        //       if (getVideo.paused) {
+        //         console.log('Video paused — attempting to resume...')
+        //         getVideo.play().catch(err => console.warn('Failed to resume video', err))
+        //       } else {
+        //         console.log("Video is not Paused");  
+        //       }
+        //     }, intervalSeconds * 1000);
+        //   }
+        // })()`)
+
+        await page.evaluate(() => {
+          function startNBCStream() {
+            let video = document.querySelector('video')
+            video.style.setProperty('position', 'fixed', 'important')
+            video.style.top = '0'
+            video.style.left = '0'
+            video.style.width = '100%'
+            video.style.height = '100%'
+            video.style.zIndex = '999000'
+            video.style.background = 'black'
+            video.style.cursor = 'none'
+            video.style.transform = 'translate(0, 0)'
+            video.style.objectFit = 'contain'
+            video.play().catch((err) => { 
+              console.warn('Failed to resume video', err)
+            })
+            video.muted = false
+            video.removeAttribute('muted')
+
+            let header = document.querySelector('.header-container')
+            if (header) {
+              header.style.zIndex = '0'
+            }
           }
 
+          startNBCStream()
+
           // Check every X seconds if the video is paused
-          if (${argv.enableNBCPauseTimer}) {
-            const intervalSeconds = ${argv.nbcPauseTimer};
+          if (argv.enableNBCPauseTimer) {
+            const intervalSeconds = argv.nbcPauseTimer
             setInterval(() => {
               const getVideo = document.querySelector('video')
               if (getVideo.paused) {
                 console.log('Video paused — attempting to resume...')
-                getVideo.play().catch(err => console.warn('Failed to resume video', err))
+                startNBCStream()
               } else {
                 console.log("Video is not Paused");  
               }
             }, intervalSeconds * 1000);
           }
-        })()`)
+        })
+
       } catch (e) {
         console.log('failed to start stream', u, e)
       }
