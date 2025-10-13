@@ -27,4 +27,4 @@ sleep 1
 grep "The VNC desktop is:" x11vnc.log
 echo "The VNC port is:         $HOST_VNC_PORT"
 sleep 1
-bun main.js -v $VIDEO_BITRATE -a $AUDIO_BITRATE -f $FRAMERATE -p $CC4C_PORT -w $VIDEO_WIDTH -h $VIDEO_HEIGHT
+bun main.js -v $VIDEO_BITRATE -a $AUDIO_BITRATE -f $FRAMERATE -p $CC4C_PORT -w $VIDEO_WIDTH -h $VIDEO_HEIGHT -e $NBC_TIMER_ENABLED -t $NBC_TIMER

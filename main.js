@@ -10,6 +10,12 @@ require('console-stamp')(console, {
   format: ':date(yyyy/mm/dd HH:MM:ss.l)',
 })
 
+// --------------------- Type definition ---------------------------
+
+/** @typedef {import('puppeteer-core').Browser} Browser */
+
+// ---------------------------------------------------------------------
+
 // --- suppress harmless first-run extension error, but still restart ---
 const EXT_ID = 'jjndjgheafjngoipoacpjgeicjeomjli';
 
@@ -72,6 +78,18 @@ const argv = require('yargs')
     type: 'boolean',
     default: false,
   })
+  .option('enableNBCPauseTimer', {
+    alias: 'e',
+    description: 'Allow timer on NBC to check if paused',
+    type: 'boolean',
+    default: false,
+  })
+  .option('nbcPauseTimer', {
+    alias: 't',
+    description: 'Check every x amount of seconds to see if nbc is paused',
+    type: 'number',
+    default: 10,
+  })
   .scriptName('cc4c')
   .usage('Usage: $0 [options]')
   .example('$0 -v 6000000 -a 192000 -f 30 -w 1920 -h 1080', 'Capture at 6Mbps video, 192kbps audio, 30fps, 1920x1080')
@@ -82,7 +100,8 @@ const argv = require('yargs')
   .wrap(null) // Don't wrap help text
   .help()
   .alias('help', '?')
-  .version(false).argv // Disable version number in help
+  .version(false) // Disable version number in help
+  .parseSync() // Parse to JS, non Async // Give Types
 
 // Display settings
 console.log('Selected settings:')
@@ -91,6 +110,8 @@ console.log(`Audio Bitrate: ${argv.audioBitrate} bps (${argv.audioBitrate / 1000
 console.log(`Minimum Frame Rate: ${argv.frameRate} fps`)
 console.log(`Port: ${argv.port}`)
 console.log(`Resolution: ${argv.width}x${argv.height}`)
+console.log(`NBC Timer Enabled: ${argv.enableNBCPauseTimer}`)
+console.log(`NBC Timer: ${argv.nbcPauseTimer}`)
 
 const encodingParams = {
   videoBitsPerSecond: argv.videoBitrate,
@@ -110,6 +131,10 @@ function delay(ms) {
 }
 
 var currentBrowser, dataDir, lastPage
+/**
+ * Gets the current Puppeteer browser instance.
+ * @returns {Promise<Browser>} The current Puppeteer browser.
+ */
 const getCurrentBrowser = async () => {
   if (!currentBrowser || !currentBrowser.isConnected()) {
     currentBrowser = await launch(
@@ -349,6 +374,8 @@ async function main() {
   })
 
   async function handleStreamRequest(req, res, u) {
+
+    /** @param {Browser} browser */
     async function setupPage(browser) {
       // Create a new page
       var newPage = await browser.newPage()
@@ -396,13 +423,13 @@ async function main() {
         audioBitsPerSecond: encodingParams.audioBitsPerSecond,
         mimeType: encodingParams.mimeType,
         videoConstraints: {
-          mandatory: {
-            minWidth: viewport.width,
-            minHeight: viewport.height,
-            maxWidth: viewport.width,
-            maxHeight: viewport.height,
-            minFrameRate: encodingParams.minFrameRate,
-            maxFrameRate: encodingParams.maxFrameRate,
+          mandatory: { // Fix: Type MediaTrackConstraints 
+            height: viewport.height, 
+            width: viewport.width,
+            frameRate: {
+              min: encodingParams.minFrameRate,
+              max: encodingParams.maxFrameRate
+            },
           },
         },
       })
@@ -450,13 +477,13 @@ async function main() {
       await page.goto(u)
 
       //  get some additional info about the page
-      const uiSize = await page.evaluate(`(function() {
+      const uiSize = await page.evaluate(() => { // Give uiSize type of { height: number; width: number; }
         return {
           height: window.outerHeight - window.innerHeight,
           width: window.outerWidth - window.innerWidth,
         }
-      })()`)
-      const session = await page.target().createCDPSession()
+      })
+      const session = await page.createCDPSession() // page.target() is deprecated
       const {windowId} = await session.send('Browser.getWindowForTarget')
 
       await session.send('Browser.setWindowBounds', {
@@ -483,11 +510,13 @@ async function main() {
       console.log('URL contains www.nbc.com')
       try {
         await page.waitForSelector('video')
+
         await page.waitForFunction(`(function() {
           let video = document.querySelector('video')
           return video.readyState === 4
         })()`)
-        await page.evaluate(`(function() {
+
+        const nbcCode = `
           let video = document.querySelector('video')
           video.style.setProperty('position', 'fixed', 'important')
           video.style.top = '0'
@@ -506,8 +535,27 @@ async function main() {
           let header = document.querySelector('.header-container')
           if (header) {
             header.style.zIndex = '0'
+          }`
+
+        await page.evaluate(`(function() {
+          ${nbcCode}
+
+          // Check every X seconds if the video is paused
+          if (${argv.enableNBCPauseTimer}) {
+            const intervalSeconds = ${argv.nbcPauseTimer};
+            setInterval(() => {
+              const getVideo = document.querySelector('video')
+              if (getVideo.paused) {
+                console.log('Video paused — attempting to resume...')
+
+                ${nbcCode}
+              } else {
+                console.log("Video is not Paused");  
+              }
+            }, intervalSeconds * 1000);
           }
         })()`)
+
       } catch (e) {
         console.log('failed to start stream', u, e)
       }
