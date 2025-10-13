@@ -477,13 +477,13 @@ async function main() {
       await page.goto(u)
 
       //  get some additional info about the page
-      const uiSize = await page.evaluate(() => {
+      const uiSize = await page.evaluate(() => { // Give uiSize type of { height: number; width: number; }
         return {
           height: window.outerHeight - window.innerHeight,
           width: window.outerWidth - window.innerWidth,
         }
       })
-      const session = await page.createCDPSession()
+      const session = await page.createCDPSession() // page.target() is deprecated
       const {windowId} = await session.send('Browser.getWindowForTarget')
 
       await session.send('Browser.setWindowBounds', {
@@ -516,7 +516,7 @@ async function main() {
           return video.readyState === 4
         })()`)
 
-        await page.evaluate(`(function() {
+        const nbcCode = `
           let video = document.querySelector('video')
           video.style.setProperty('position', 'fixed', 'important')
           video.style.top = '0'
@@ -535,7 +535,10 @@ async function main() {
           let header = document.querySelector('.header-container')
           if (header) {
             header.style.zIndex = '0'
-          }
+          }`
+
+        await page.evaluate(`(function() {
+          ${nbcCode}
 
           // Check every X seconds if the video is paused
           if (${argv.enableNBCPauseTimer}) {
@@ -545,25 +548,7 @@ async function main() {
               if (getVideo.paused) {
                 console.log('Video paused — attempting to resume...')
 
-                let video = document.querySelector('video')
-                video.style.setProperty('position', 'fixed', 'important')
-                video.style.top = '0'
-                video.style.left = '0'
-                video.style.width = '100%'
-                video.style.height = '100%'
-                video.style.zIndex = '999000'
-                video.style.background = 'black'
-                video.style.cursor = 'none'
-                video.style.transform = 'translate(0, 0)'
-                video.style.objectFit = 'contain'
-                video.play()
-                video.muted = false
-                video.removeAttribute('muted')
-
-                let header = document.querySelector('.header-container')
-                if (header) {
-                  header.style.zIndex = '0'
-                }
+                ${nbcCode}
               } else {
                 console.log("Video is not Paused");  
               }
