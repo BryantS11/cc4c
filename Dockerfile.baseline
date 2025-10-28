@@ -42,6 +42,7 @@ ENV PATH="/usr/local/lib/node_modules/@oven/bun-linux-x64-baseline/bin:${PATH}"
 # Create app directory and copy files
 WORKDIR /home/chrome
 COPY main.js package.json bun.lock start.sh ./
+COPY src ./src
 
 # Install Bun (baseline build for compatibility with low-end/older processors)
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true

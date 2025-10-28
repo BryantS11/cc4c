@@ -41,6 +41,7 @@ ENV DOCKER=true
 # Create app directory and copy files
 WORKDIR /home/chrome
 COPY main.js package.json bun.lock start.sh ./
+COPY src ./src
 
 # Install Node dependencies
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true

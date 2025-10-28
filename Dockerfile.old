@@ -14,6 +14,7 @@ RUN apt-get update \
 
 WORKDIR /home/chrome
 COPY main.js package.json bun.lock /home/chrome/
+COPY src /home/chrome/src
 
 FROM base
 RUN npm install -g bun

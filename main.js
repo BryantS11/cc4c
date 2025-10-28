@@ -6,6 +6,7 @@ const process = require('process')
 const path = require('path')
 const express = require('express')
 const morgan = require('morgan')
+const {loadAutomationRules, runAutomationForUrl} = require('./src/automation-runner')
 require('console-stamp')(console, {
   format: ':date(yyyy/mm/dd HH:MM:ss.l)',
 })
@@ -17,21 +18,18 @@ require('console-stamp')(console, {
 // ---------------------------------------------------------------------
 
 // --- suppress harmless first-run extension error, but still restart ---
-const EXT_ID = 'jjndjgheafjngoipoacpjgeicjeomjli';
+const EXT_ID = 'jjndjgheafjngoipoacpjgeicjeomjli'
 
-process.on('unhandledRejection', (reason) => {
-  const msg = String(reason?.message || reason || '');
-  if (
-    msg.includes('net::ERR_BLOCKED_BY_CLIENT') &&
-    msg.includes(`chrome-extension://${EXT_ID}/options.html`)
-  ) {
-    console.log('[Info] Restarting following first-run puppeteer-stream extension installation');
-    process.exit(1);  // still exit so supervisor restarts
-    return;
+process.on('unhandledRejection', reason => {
+  const msg = String(reason?.message || reason || '')
+  if (msg.includes('net::ERR_BLOCKED_BY_CLIENT') && msg.includes(`chrome-extension://${EXT_ID}/options.html`)) {
+    console.log('[Info] Restarting following first-run puppeteer-stream extension installation')
+    process.exit(1) // still exit so supervisor restarts
+    return
   }
-  console.error('Unhandled rejection:', reason);
-  process.exit(1);
-});
+  console.error('Unhandled rejection:', reason)
+  process.exit(1)
+})
 // ---------------------------------------------------------------------
 
 // Parse command line arguments
@@ -78,17 +76,17 @@ const argv = require('yargs')
     type: 'boolean',
     default: false,
   })
-  .option('enableNBCPauseTimer', {
-    alias: 'e',
-    description: 'Allow timer on NBC to check if paused',
-    type: 'boolean',
-    default: false,
+  .option('rules', {
+    alias: 'r',
+    type: 'string',
+    describe: 'Path or URL to the automation rules JSON file',
+    default: 'https://raw.githubusercontent.com/BryantS11/cc4c-rules/refs/heads/main/automation.json',
   })
-  .option('nbcPauseTimer', {
+  .option('rulesRefreshTimer', {
     alias: 't',
-    description: 'Check every x amount of seconds to see if nbc is paused',
     type: 'number',
-    default: 10,
+    default: 15,
+    describe: 'Minutes before rules are pulled from remote url',
   })
   .scriptName('cc4c')
   .usage('Usage: $0 [options]')
@@ -110,8 +108,8 @@ console.log(`Audio Bitrate: ${argv.audioBitrate} bps (${argv.audioBitrate / 1000
 console.log(`Minimum Frame Rate: ${argv.frameRate} fps`)
 console.log(`Port: ${argv.port}`)
 console.log(`Resolution: ${argv.width}x${argv.height}`)
-console.log(`NBC Timer Enabled: ${argv.enableNBCPauseTimer}`)
-console.log(`NBC Timer: ${argv.nbcPauseTimer}`)
+console.log(`Rules URL: ${argv.rules}`)
+console.log(`Rules Refresh Timer (minutes): ${argv.rulesRefreshTimer}`)
 
 const encodingParams = {
   videoBitsPerSecond: argv.videoBitrate,
@@ -261,6 +259,16 @@ async function main() {
       dataDir = path.join(process.env.USERPROFILE, 'AppData', 'Local', 'ChromeCapture')
       break
   }
+  // Rules
+  let rulesSource = argv.rules
+  await loadAutomationRules(rulesSource)
+
+  // Optional auto-refresh
+  setInterval(async () => {
+    console.log('[Automation] Refreshing rules...')
+    await loadAutomationRules(rulesSource)
+  }, argv.rulesRefreshTimer * 60 * 1000)
+  //
 
   const app = express()
 
@@ -374,7 +382,6 @@ async function main() {
   })
 
   async function handleStreamRequest(req, res, u) {
-
     /** @param {Browser} browser */
     async function setupPage(browser) {
       // Create a new page
@@ -423,12 +430,13 @@ async function main() {
         audioBitsPerSecond: encodingParams.audioBitsPerSecond,
         mimeType: encodingParams.mimeType,
         videoConstraints: {
-          mandatory: { // Fix: Type MediaTrackConstraints 
-            height: viewport.height, 
+          mandatory: {
+            // Fix: Type MediaTrackConstraints
+            height: viewport.height,
             width: viewport.width,
             frameRate: {
               min: encodingParams.minFrameRate,
-              max: encodingParams.maxFrameRate
+              max: encodingParams.maxFrameRate,
             },
           },
         },
@@ -477,7 +485,8 @@ async function main() {
       await page.goto(u)
 
       //  get some additional info about the page
-      const uiSize = await page.evaluate(() => { // Give uiSize type of { height: number; width: number; }
+      const uiSize = await page.evaluate(() => {
+        // Give uiSize type of { height: number; width: number; }
         return {
           height: window.outerHeight - window.innerHeight,
           width: window.outerWidth - window.innerWidth,
@@ -505,223 +514,8 @@ async function main() {
       console.log('failed to goto page and setup window', u, e)
     }
 
-    // For NBC, look for video element and wait for it to be ready
-    if (u.includes('www.nbc.com')) {
-      console.log('URL contains www.nbc.com')
-      try {
-        await page.waitForSelector('video')
-
-        await page.waitForFunction(`(function() {
-          let video = document.querySelector('video')
-          return video.readyState === 4
-        })()`)
-
-        const nbcCode = `
-          let video = document.querySelector('video')
-          video.style.setProperty('position', 'fixed', 'important')
-          video.style.top = '0'
-          video.style.left = '0'
-          video.style.width = '100%'
-          video.style.height = '100%'
-          video.style.zIndex = '999000'
-          video.style.background = 'black'
-          video.style.cursor = 'none'
-          video.style.transform = 'translate(0, 0)'
-          video.style.objectFit = 'contain'
-          video.play()
-          video.muted = false
-          video.removeAttribute('muted')
-
-          let header = document.querySelector('.header-container')
-          if (header) {
-            header.style.zIndex = '0'
-          }`
-
-        await page.evaluate(`(function() {
-          ${nbcCode}
-
-          // Check every X seconds if the video is paused
-          if (${argv.enableNBCPauseTimer}) {
-            const intervalSeconds = ${argv.nbcPauseTimer};
-            setInterval(() => {
-              const getVideo = document.querySelector('video')
-              if (getVideo.paused) {
-                console.log('Video paused — attempting to resume...')
-
-                ${nbcCode}
-              } else {
-                console.log("Video is not Paused");  
-              }
-            }, intervalSeconds * 1000);
-          }
-        })()`)
-
-      } catch (e) {
-        console.log('failed to start stream', u, e)
-      }
-    }
-
-    // Handle Sling TV
-    else if (u.includes('watch.sling.com')) {
-      console.log('URL contains watch.sling.com')
-      try {
-        // Div tag names can be found in the Chrome DevTools Layout tab
-
-        // Click the full screen button
-        const fullScreenButton = await page.waitForSelector('div.player-button.active.videoPlayerFullScreenToggle')
-        await fullScreenButton.click() //click for fullscreen
-
-        // Find Mute button and then use volume slider
-        const muteButton = await page.waitForSelector('div.player-button.active.volumeControls')
-        await muteButton.click() //click unmute
-
-        // Simulate pressing the right arrow key 10 times to max volume
-        for (let i = 0; i < 10; i++) {
-          await delay(200)
-          await page.keyboard.press('ArrowRight')
-        }
-
-        console.log('Set Sling to Full Screen and Volume to max')
-      } catch (e) {
-        console.log('Error for watch.sling.com:', e)
-      }
-    } else if (u.includes('peacocktv.com')) {
-      console.log('URL contains peacocktv.com')
-      try {
-        // look for the mute button no the first screen
-        await page.waitForSelector('[data-testid="playback-volume-muted-icon"]', {visible: true})
-        await delay(200)
-        await page.keyboard.press('m') // Press 'm' to unmute
-
-        console.log('Set Peacock to Full Screen and Volume to max')
-      } catch (e) {
-        console.error('Error for peacocktv.com:', e)
-      }
-    } else if (u.includes('watch.spectrum.net')) {
-      console.log('URL contains watch.spectrum.net')
-      try {
-        // Trigger fullscreen mode using the Fullscreen API
-        await delay(1030)
-        await page.evaluate(() => {
-          const element = document.documentElement
-          if (element.requestFullscreen) {
-            element.requestFullscreen()
-          } else if (element.mozRequestFullScreen) {
-            element.mozRequestFullScreen()
-          } else if (element.webkitRequestFullscreen) {
-            element.webkitRequestFullscreen()
-          } else if (element.msRequestFullscreen) {
-            element.msRequestFullscreen()
-          }
-        })
-      } catch (e) {
-        console.log('Error for watch.spectrum.com:', e)
-      }
-    }
-
-    // Handle Google Photos
-    else if (u.includes('photos.app.goo.gl')) {
-      console.log('URL contains photos.app.goo.gl')
-      try {
-        // Simulate pressing the tab key key 10 times to get to the More Options button
-        for (let i = 0; i < 8; i++) {
-          await delay(200)
-          await page.keyboard.press('Tab')
-        }
-
-        // Press Enter twice to start Slideshow
-        await page.keyboard.press('Enter')
-        await delay(200)
-        await page.keyboard.press('Enter')
-
-        console.log('Started Google Slideshow')
-      } catch (e) {
-        // Handle any errors specific to photos.google.com...
-        console.log('Error for photos.google.com:', e)
-      }
-    }
-
-    // Handle Spectrum
-    else if (u.includes('watch.spectrum.net')) {
-      console.log('URL contains watch.spectrum.net')
-      try {
-        // Wait for the page to settle before requesting fullscreen
-        await delay(1030)
-
-        // Use Fullscreen API to enter fullscreen mode
-        await page.evaluate(() => {
-          const el = document.documentElement
-          el.requestFullscreen?.() ||
-            el.mozRequestFullScreen?.() ||
-            el.webkitRequestFullscreen?.() ||
-            el.msRequestFullscreen?.()
-        })
-
-        console.log('Set Spectrum to Full Screen')
-      } catch (e) {
-        // Handle any errors specific to watch.spectrum.net
-        console.log('Error for watch.spectrum.net:', e)
-      }
-    }
-
-    // Handle Peacock
-    else if (u.includes('peacock')) {
-      console.log('URL contains peacock')
-      try {
-        // Press 'F' to toggle fullscreen mode
-        await page.keyboard.press('KeyF')
-
-        // Optional: simulate pressing right arrow 10x to raise volume (if applicable)
-        for (let i = 0; i < 10; i++) {
-          await delay(200)
-          await page.keyboard.press('ArrowRight')
-        }
-
-        console.log('Set Peacock to Full Screen and Volume to max')
-      } catch (e) {
-        // Handle any errors specific to Peacock
-        console.log('Error for peacock:', e)
-      }
-    }
-
-    // Handle DirecTV Stream
-    else if (u.includes('stream.directv.com')) {
-      console.log('URL contains stream.directv.com')
-      try {
-        // Extract the channel name from the "ch" query parameter of the URL
-        // e.g. http://localhost:5589/stream?url=http://stream.directv.com/guide&ch=1234
-        const channel = req.query.ch
-
-        // Simulate pressing the Tab key 6 times
-        for (let i = 0; i < 6; i++) {
-          await delay(500)
-          await page.keyboard.press('Tab')
-        }
-        console.log('Searching DirecTVStream Channel List for: ', channel)
-        await page.keyboard.type(channel) // Use the variable without quotes
-        await delay(1115)
-        await page.mouse.click(755, 150, {button: 'left'}) // Second click (left-click) - Only line added
-        console.log('Waiting for channel load: ' + channel)
-        await delay(10000)
-        console.log('Channel loaded, going Full Screen: ' + channel)
-
-        // Trigger fullscreen mode using the Fullscreen API
-        await page.evaluate(() => {
-          const element = document.documentElement
-          if (element.requestFullscreen) {
-            element.requestFullscreen()
-          } else if (element.mozRequestFullScreen) {
-            element.mozRequestFullScreen()
-          } else if (element.webkitRequestFullscreen) {
-            element.webkitRequestFullscreen()
-          } else if (element.msRequestFullscreen) {
-            element.msRequestFullscreen()
-          }
-        })
-      } catch (e) {
-        console.log('Error for stream.directv.com:', e)
-      }
-    }
+    // Run Rules
+    await runAutomationForUrl(page, req)
   }
 
   const server = app.listen(argv.port, () => {
